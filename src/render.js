@@ -19,13 +19,16 @@ function renderMint(info, host) {
 
 function renderHolders(holders, decimals) {
   if (holders.accounts.length === 0) {
-    return 'No token accounts hold this mint.\n';
+    return holders.total > 0
+      ? 'No holders match the filters.\n'
+      : 'No token accounts hold this mint.\n';
   }
 
-  const header = ['#', 'Token account', 'Amount', '% of supply'];
+  const showOwners = holders.accounts.some((h) => h.owner);
+  const header = ['#', showOwners ? 'Owner' : 'Token account', 'Amount', '% of supply'];
   const rows = holders.accounts.map((h) => [
     String(h.rank),
-    h.tokenAccount,
+    showOwners ? h.owner || 'unknown' : h.tokenAccount,
     formatSupply(h.amount.raw, decimals),
     `${h.percent.toFixed(2)}%`,
   ]);
@@ -43,7 +46,7 @@ function renderHolders(holders, decimals) {
     ].join('  ');
 
   return `${[
-    'Top holders (token accounts)',
+    showOwners ? 'Top holders (by owner)' : 'Top holders (token accounts)',
     line(header),
     ...rows.map(line),
     `Top ${rows.length} hold ${holders.percent.toFixed(2)}% of supply`,

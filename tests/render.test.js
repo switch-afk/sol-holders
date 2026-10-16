@@ -45,3 +45,34 @@ test('renderHolders explains an empty list', () => {
     'No token accounts hold this mint.\n'
   );
 });
+
+test('renderHolders shows owners when they are resolved', () => {
+  const withOwners = {
+    ...holders,
+    accounts: holders.accounts.map((h, i) => ({ ...h, owner: `OwnerWallet${i === 0 ? 'AAAA' : 'BBBB'}` })),
+  };
+  const lines = renderHolders(withOwners, 6).trimEnd().split('\n');
+  assert.equal(lines[0], 'Top holders (by owner)');
+  assert.match(lines[1], /^#\s+Owner\s+Amount\s+% of supply$/);
+  assert.match(lines[2], /^1\s+OwnerWalletAAAA\s+250,000\s+25\.00%$/);
+  assert.ok(!lines[2].includes('HolderAccountAAAA'));
+});
+
+test('renderHolders marks unresolved owners as unknown', () => {
+  const partial = {
+    ...holders,
+    accounts: [
+      { ...holders.accounts[0], owner: 'OwnerWalletAAAA' },
+      { ...holders.accounts[1], owner: null },
+    ],
+  };
+  const lines = renderHolders(partial, 6).trimEnd().split('\n');
+  assert.match(lines[3], /^2\s+unknown\s+100,000\s+10\.00%$/);
+});
+
+test('renderHolders explains when the filters hide every holder', () => {
+  assert.equal(
+    renderHolders({ accounts: [], percent: 0, total: 20 }, 6),
+    'No holders match the filters.\n'
+  );
+});

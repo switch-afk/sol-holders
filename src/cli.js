@@ -4,8 +4,10 @@ const pkg = require('../package.json');
 const { validateAddress } = require('./validate');
 const { RpcError, resolveRpcUrl, createRpcClient } = require('./rpc');
 const { MintError, fetchMint } = require('./mint');
-const { HoldersError, fetchHolders } = require('./holders');
+const { HoldersError, fetchHolders, selectHolders, resolveOwners } = require('./holders');
 const { renderMint, renderHolders } = require('./render');
+
+const MAX_LIMIT = 20;
 
 const USAGE = `sol-holders ${pkg.version}
 
@@ -15,6 +17,9 @@ Usage:
   sol-holders <mint> [options]
 
 Options:
+  --limit <n>    Show the top n holders, 1 to ${MAX_LIMIT} (default: ${MAX_LIMIT})
+  --min <pct>    Only show holders with at least this % of supply (0 to 100)
+  --no-owners    Skip the owner lookup and show token accounts
   --rpc <url>    RPC endpoint (default: $SOL_HOLDERS_RPC, then the public mainnet RPC)
   --json         Print JSON instead of text
   -h, --help     Show this help
@@ -22,6 +27,12 @@ Options:
 `;
 
 const HOLDERS_HINT = 'Some public RPCs limit this lookup. Try --rpc with your own endpoint.';
+
+const VALUE_FLAGS = {
+  '--rpc': 'a URL',
+  '--limit': 'a number',
+  '--min': 'a percentage',
+};
 
 class UsageError extends Error {}
 
@@ -34,11 +45,30 @@ function isHttpUrl(value) {
   }
 }
 
+// "2.5" -> 250 basis points. Returns null unless the value is 0 to 100 with up to 2 decimals.
+function parseMinBasisPoints(value) {
+  const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(value);
+  if (!match) return null;
+  const basisPoints = Number(match[1]) * 100 + Number((match[2] || '').padEnd(2, '0'));
+  return basisPoints <= 10000 ? basisPoints : null;
+}
+
 function parseArgs(argv) {
-  const opts = { mint: null, rpc: null, json: false, help: false, version: false };
+  const opts = {
+    mint: null,
+    rpc: null,
+    limit: MAX_LIMIT,
+    minBp: 0,
+    owners: true,
+    json: false,
+    help: false,
+    version: false,
+  };
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
+    const equals = arg.startsWith('--') ? arg.indexOf('=') : -1;
+    const flag = equals === -1 ? arg : arg.slice(0, equals);
 
     if (arg === '--help' || arg === '-h') {
       opts.help = true;
@@ -46,15 +76,32 @@ function parseArgs(argv) {
       opts.version = true;
     } else if (arg === '--json') {
       opts.json = true;
-    } else if (arg === '--rpc' || arg.startsWith('--rpc=')) {
-      const value = arg === '--rpc' ? argv[++i] : arg.slice('--rpc='.length);
+    } else if (arg === '--no-owners') {
+      opts.owners = false;
+    } else if (Object.hasOwn(VALUE_FLAGS, flag)) {
+      const value = equals === -1 ? argv[++i] : arg.slice(equals + 1);
       if (!value || value.startsWith('-')) {
-        throw new UsageError('--rpc requires a URL');
+        throw new UsageError(`${flag} requires ${VALUE_FLAGS[flag]}`);
       }
-      if (!isHttpUrl(value)) {
-        throw new UsageError('--rpc must be an http(s) URL');
+
+      if (flag === '--rpc') {
+        if (!isHttpUrl(value)) {
+          throw new UsageError('--rpc must be an http(s) URL');
+        }
+        opts.rpc = value;
+      } else if (flag === '--limit') {
+        const limit = /^\d+$/.test(value) ? Number(value) : 0;
+        if (limit < 1 || limit > MAX_LIMIT) {
+          throw new UsageError(`--limit must be a whole number from 1 to ${MAX_LIMIT}`);
+        }
+        opts.limit = limit;
+      } else {
+        const basisPoints = parseMinBasisPoints(value);
+        if (basisPoints === null) {
+          throw new UsageError('--min must be a percentage from 0 to 100 (up to 2 decimals)');
+        }
+        opts.minBp = basisPoints;
       }
-      opts.rpc = value;
     } else if (arg.startsWith('-')) {
       throw new UsageError(`unknown option: ${arg}`);
     } else if (opts.mint === null) {
@@ -122,7 +169,8 @@ async function run(argv, io = { stdout: process.stdout, stderr: process.stderr }
 
   let holders;
   try {
-    holders = await fetchHolders(client, info);
+    const fetched = await fetchHolders(client, info);
+    holders = selectHolders(fetched, info, { limit: opts.limit, minBp: opts.minBp });
   } catch (err) {
     if (err instanceof RpcError || err instanceof HoldersError) {
       io.stderr.write(`error: ${err.message}\n`);
@@ -132,6 +180,15 @@ async function run(argv, io = { stdout: process.stdout, stderr: process.stderr }
       return 1;
     }
     throw err;
+  }
+
+  if (opts.owners) {
+    try {
+      holders = { ...holders, accounts: await resolveOwners(client, holders.accounts) };
+    } catch (err) {
+      if (!(err instanceof RpcError || err instanceof HoldersError)) throw err;
+      io.stderr.write(`warning: could not resolve owners: ${err.message}\n`);
+    }
   }
 
   if (opts.json) {

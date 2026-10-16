@@ -1,0 +1,23 @@
+{
+  "name": "sol-holders",
+  "version": "0.0.0",
+  "description": "Top holders of any Solana token, from your terminal.",
+  "bin": {
+    "sol-holders": "bin/sol-holders.js"
+  },
+  "files": [
+    "bin",
+    "src"
+  ],
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/switch-afk/sol-holders.git"
+  }
+}

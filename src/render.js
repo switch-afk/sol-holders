@@ -17,4 +17,37 @@ function renderMint(info, host) {
   return `${rows.map(([label, value]) => `${`${label}:`.padEnd(width)}${value}`).join('\n')}\n`;
 }
 
-module.exports = { renderMint };
+function renderHolders(holders, decimals) {
+  if (holders.accounts.length === 0) {
+    return 'No token accounts hold this mint.\n';
+  }
+
+  const header = ['#', 'Token account', 'Amount', '% of supply'];
+  const rows = holders.accounts.map((h) => [
+    String(h.rank),
+    h.tokenAccount,
+    formatSupply(h.amount.raw, decimals),
+    `${h.percent.toFixed(2)}%`,
+  ]);
+
+  const widths = header.map((title, col) =>
+    Math.max(title.length, ...rows.map((row) => row[col].length))
+  );
+
+  const line = (cells) =>
+    [
+      cells[0].padStart(widths[0]),
+      cells[1].padEnd(widths[1]),
+      cells[2].padStart(widths[2]),
+      cells[3].padStart(widths[3]),
+    ].join('  ');
+
+  return `${[
+    'Top holders (token accounts)',
+    line(header),
+    ...rows.map(line),
+    `Top ${rows.length} hold ${holders.percent.toFixed(2)}% of supply`,
+  ].join('\n')}\n`;
+}
+
+module.exports = { renderMint, renderHolders };

@@ -4,7 +4,8 @@ const pkg = require('../package.json');
 const { validateAddress } = require('./validate');
 const { RpcError, resolveRpcUrl, createRpcClient } = require('./rpc');
 const { MintError, fetchMint } = require('./mint');
-const { renderMint } = require('./render');
+const { HoldersError, fetchHolders } = require('./holders');
+const { renderMint, renderHolders } = require('./render');
 
 const USAGE = `sol-holders ${pkg.version}
 
@@ -19,6 +20,8 @@ Options:
   -h, --help     Show this help
   -v, --version  Show the version
 `;
+
+const HOLDERS_HINT = 'Some public RPCs limit this lookup. Try --rpc with your own endpoint.';
 
 class UsageError extends Error {}
 
@@ -62,6 +65,10 @@ function parseArgs(argv) {
   }
 
   return opts;
+}
+
+function shouldHintAboutRpc(err) {
+  return err instanceof RpcError && (err.status === 429 || err.status === 403 || err.code !== undefined);
 }
 
 async function run(argv, io = { stdout: process.stdout, stderr: process.stderr }, deps = {}) {
@@ -113,10 +120,25 @@ async function run(argv, io = { stdout: process.stdout, stderr: process.stderr }
     throw err;
   }
 
+  let holders;
+  try {
+    holders = await fetchHolders(client, info);
+  } catch (err) {
+    if (err instanceof RpcError || err instanceof HoldersError) {
+      io.stderr.write(`error: ${err.message}\n`);
+      if (shouldHintAboutRpc(err)) {
+        io.stderr.write(`${HOLDERS_HINT}\n`);
+      }
+      return 1;
+    }
+    throw err;
+  }
+
   if (opts.json) {
-    io.stdout.write(`${JSON.stringify(info, null, 2)}\n`);
+    const output = { ...info, holders: holders.accounts, topHoldersPercent: holders.percent };
+    io.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
   } else {
-    io.stdout.write(renderMint(info, client.host));
+    io.stdout.write(`${renderMint(info, client.host)}\n${renderHolders(holders, info.decimals)}`);
   }
   return 0;
 }

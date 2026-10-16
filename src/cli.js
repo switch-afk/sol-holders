@@ -2,6 +2,9 @@
 
 const pkg = require('../package.json');
 const { validateAddress } = require('./validate');
+const { RpcError, resolveRpcUrl, createRpcClient } = require('./rpc');
+const { MintError, fetchMint } = require('./mint');
+const { renderMint } = require('./render');
 
 const USAGE = `sol-holders ${pkg.version}
 
@@ -11,6 +14,7 @@ Usage:
   sol-holders <mint> [options]
 
 Options:
+  --rpc <url>    RPC endpoint (default: $SOL_HOLDERS_RPC, then the public mainnet RPC)
   --json         Print JSON instead of text
   -h, --help     Show this help
   -v, --version  Show the version
@@ -18,16 +22,36 @@ Options:
 
 class UsageError extends Error {}
 
-function parseArgs(argv) {
-  const opts = { mint: null, json: false, help: false, version: false };
+function isHttpUrl(value) {
+  try {
+    const { protocol } = new URL(value);
+    return protocol === 'http:' || protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
 
-  for (const arg of argv) {
+function parseArgs(argv) {
+  const opts = { mint: null, rpc: null, json: false, help: false, version: false };
+
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+
     if (arg === '--help' || arg === '-h') {
       opts.help = true;
     } else if (arg === '--version' || arg === '-v') {
       opts.version = true;
     } else if (arg === '--json') {
       opts.json = true;
+    } else if (arg === '--rpc' || arg.startsWith('--rpc=')) {
+      const value = arg === '--rpc' ? argv[++i] : arg.slice('--rpc='.length);
+      if (!value || value.startsWith('-')) {
+        throw new UsageError('--rpc requires a URL');
+      }
+      if (!isHttpUrl(value)) {
+        throw new UsageError('--rpc must be an http(s) URL');
+      }
+      opts.rpc = value;
     } else if (arg.startsWith('-')) {
       throw new UsageError(`unknown option: ${arg}`);
     } else if (opts.mint === null) {
@@ -40,7 +64,7 @@ function parseArgs(argv) {
   return opts;
 }
 
-function run(argv, io = { stdout: process.stdout, stderr: process.stderr }) {
+async function run(argv, io = { stdout: process.stdout, stderr: process.stderr }, deps = {}) {
   let opts;
   try {
     opts = parseArgs(argv);
@@ -71,10 +95,28 @@ function run(argv, io = { stdout: process.stdout, stderr: process.stderr }) {
     return 2;
   }
 
+  const env = deps.env || process.env;
+  const client = createRpcClient({
+    url: resolveRpcUrl(opts.rpc, env),
+    fetch: deps.fetch,
+    sleep: deps.sleep,
+  });
+
+  let info;
+  try {
+    info = await fetchMint(client, result.value);
+  } catch (err) {
+    if (err instanceof RpcError || err instanceof MintError) {
+      io.stderr.write(`error: ${err.message}\n`);
+      return 1;
+    }
+    throw err;
+  }
+
   if (opts.json) {
-    io.stdout.write(`${JSON.stringify({ mint: result.value })}\n`);
+    io.stdout.write(`${JSON.stringify(info, null, 2)}\n`);
   } else {
-    io.stdout.write(`Mint: ${result.value}\n`);
+    io.stdout.write(renderMint(info, client.host));
   }
   return 0;
 }

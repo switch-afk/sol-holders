@@ -1,13 +1,15 @@
 {
   "name": "sol-holders",
-  "version": "0.0.0",
-  "description": "Top holders of any Solana token, from your terminal.",
+  "version": "0.1.0",
+  "description": "Top holders of any Solana token from your terminal: supply, authorities and the largest owners",
   "bin": {
     "sol-holders": "bin/sol-holders.js"
   },
+  "main": "src/cli.js",
   "files": [
     "bin",
-    "src"
+    "src",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "test": "node --test"
@@ -15,9 +17,22 @@
   "engines": {
     "node": ">=18"
   },
+  "keywords": [
+    "solana",
+    "token",
+    "spl-token",
+    "holders",
+    "cli",
+    "zero-dependency"
+  ],
+  "author": "Blue Brick",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/switch-afk/sol-holders.git"
-  }
+  },
+  "bugs": {
+    "url": "https://github.com/switch-afk/sol-holders/issues"
+  },
+  "homepage": "https://github.com/switch-afk/sol-holders#readme"
 }
